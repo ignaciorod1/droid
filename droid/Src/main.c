@@ -49,7 +49,7 @@ TIM_HandleTypeDef htim1;
 
 /* USER CODE BEGIN PV */
 /* Private variables ---------------------------------------------------------*/
-int freq = 1000;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -62,6 +62,18 @@ void HAL_TIM_MspPostInit(TIM_HandleTypeDef *htim);
 /* USER CODE BEGIN PFP */
 /* Private function prototypes -----------------------------------------------*/
 
+// Set new frequency for the stepper 
+void set_PWM_freq(int new_PWM_freq,  TIM_TypeDef *timer, uint32_t channel){
+		timer->ARR = new_PWM_freq;
+	
+		switch(channel){
+			case 1:	timer->CCR1 = timer->ARR/2; break;
+			case 2: timer->CCR2 = timer->ARR/2; break;
+			case 3:	timer->CCR3 = timer->ARR/2; break;
+			case 4: timer->CCR4 = timer->ARR/2; break;
+			default: break;
+		}
+}
 /* USER CODE END PFP */
 
 /* USER CODE BEGIN 0 */
@@ -101,15 +113,17 @@ int main(void)
   /* USER CODE BEGIN 2 */
 	
 	HAL_TIM_PWM_Start (&htim1,TIM_CHANNEL_1);  
+	HAL_Delay(2000);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-
+		set_PWM_freq(500, TIM1, 1);
+	
   /* USER CODE END WHILE */
-
+		
   /* USER CODE BEGIN 3 */
 
   }
