@@ -49,6 +49,8 @@
 
 /* Private define ------------------------------------------------------------*/
 
+#define DIR_2_Pin GPIO_PIN_8
+#define DIR_2_GPIO_Port GPIOD
 #define DIR_Pin GPIO_PIN_10
 #define DIR_GPIO_Port GPIOD
 
