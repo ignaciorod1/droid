@@ -76,18 +76,6 @@ void HAL_TIM_MspPostInit(TIM_HandleTypeDef *htim);
 /* USER CODE BEGIN PFP */
 /* Private function prototypes -----------------------------------------------*/
 
-void set_PWM_freq(int new_PWM_freq,  TIM_TypeDef *timer, uint32_t channel){
-		timer->ARR = new_PWM_freq;
-	
-		switch(channel){
-			case 1:	timer->CCR1 = timer->ARR/2; break;
-			case 2: timer->CCR2 = timer->ARR/2; break;
-			case 3:	timer->CCR3 = timer->ARR/2; break;
-			case 4: timer->CCR4 = timer->ARR/2; break;
-			default: break;
-		}
-}
-
 void setVel(struct Stepper *stepper, uint32_t vel){
 		stepper->timer->ARR = vel;
 		stepper->timer->CCR1 = vel/2;
