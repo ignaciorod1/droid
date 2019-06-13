@@ -81,13 +81,16 @@ void setVel(struct Stepper *stepper, uint32_t vel){
 		stepper->timer->CCR1 = vel/2;
 }
 
-void setDir(struct Stepper *stepper, bool dir){
-	GPIO_PinState s;
-	if(dir)	s = GPIO_PIN_SET;
-	else s = GPIO_PIN_RESET;
+void setDir(struct Stepper *stepper, int dir){
 	
-	stepper->dir = s;
-	HAL_GPIO_WritePin(stepper->dir_letter, stepper->dir_number, s);
+	if(dir == 1)	{
+		stepper->dir = GPIO_PIN_SET;
+	}
+	else if (dir == 0){ 
+		stepper->dir = GPIO_PIN_RESET;
+	}
+
+	HAL_GPIO_WritePin(stepper->dir_letter, stepper->dir_number, stepper->dir);
 }
 
 
@@ -105,19 +108,19 @@ void setDir(struct Stepper *stepper, bool dir){
 int main(void)
 {
   /* USER CODE BEGIN 1 */
-	setDir(&left, 0);
 	left.dir_letter = GPIOD;
 	left.dir_number = GPIO_PIN_8;
 	left.timer = TIM1;
 	left.uStepping = 0;
 	left.vel = 0;
-	
-	setDir(&right, 1);
+	left.dir = GPIO_PIN_SET;
+
 	right.dir_letter = GPIOD;
 	right.dir_number = GPIO_PIN_10;
 	right.timer = TIM3;
 	right.uStepping = 0;
 	right.vel = 0;
+	right.dir = GPIO_PIN_SET;
   /* USER CODE END 1 */
 
   /* MCU Configuration----------------------------------------------------------*/
@@ -146,7 +149,14 @@ int main(void)
 	HAL_Delay(1000);
 	
 	setVel(&left, 500);
+	setDir(&left, 1);
+	
 	setVel(&right, 350);
+  setDir(&right, 0);
+	
+	HAL_Delay(500);
+	setDir(&right, 1);
+	setDir(&left, 0);
   /* USER CODE END 2 */
 
   /* Infinite loop */
