@@ -41,7 +41,7 @@
 #include "stm32f4xx_hal.h"
 
 /* USER CODE BEGIN Includes */
-
+#include <stdbool.h>
 /* USER CODE END Includes */
 
 /* Private variables ---------------------------------------------------------*/
@@ -50,6 +50,17 @@ TIM_HandleTypeDef htim3;
 
 /* USER CODE BEGIN PV */
 /* Private variables ---------------------------------------------------------*/
+
+
+struct Stepper {
+	GPIO_TypeDef *dir_letter;
+	uint16_t dir_number;
+	GPIO_PinState dir;
+	uint32_t uStepping;	//this controls the pins of microstepping  for the A4988 resolution
+	uint32_t vel;		//velocity in steps	
+	TIM_TypeDef *timer;	//the timer attached 
+}left, right;
+
 
 /* USER CODE END PV */
 
@@ -76,6 +87,22 @@ void set_PWM_freq(int new_PWM_freq,  TIM_TypeDef *timer, uint32_t channel){
 			default: break;
 		}
 }
+
+void setVel(struct Stepper *stepper, uint32_t vel){
+		stepper->timer->ARR = vel;
+		stepper->timer->CCR1 = vel/2;
+}
+
+void setDir(struct Stepper *stepper, bool dir){
+	GPIO_PinState s;
+	if(dir)	s = GPIO_PIN_SET;
+	else s = GPIO_PIN_RESET;
+	
+	stepper->dir = s;
+	HAL_GPIO_WritePin(stepper->dir_letter, stepper->dir_number, s);
+}
+
+
 /* USER CODE END PFP */
 
 /* USER CODE BEGIN 0 */
@@ -90,7 +117,19 @@ void set_PWM_freq(int new_PWM_freq,  TIM_TypeDef *timer, uint32_t channel){
 int main(void)
 {
   /* USER CODE BEGIN 1 */
-
+	setDir(&left, 0);
+	left.dir_letter = GPIOD;
+	left.dir_number = GPIO_PIN_8;
+	left.timer = TIM1;
+	left.uStepping = 0;
+	left.vel = 0;
+	
+	setDir(&right, 1);
+	right.dir_letter = GPIOD;
+	right.dir_number = GPIO_PIN_10;
+	right.timer = TIM3;
+	right.uStepping = 0;
+	right.vel = 0;
   /* USER CODE END 1 */
 
   /* MCU Configuration----------------------------------------------------------*/
@@ -116,7 +155,10 @@ int main(void)
   /* USER CODE BEGIN 2 */
 	HAL_TIM_PWM_Start (&htim1,TIM_CHANNEL_1);  
 	HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
-	HAL_Delay(2000);
+	HAL_Delay(1000);
+	
+	setVel(&left, 500);
+	setVel(&right, 350);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -124,8 +166,7 @@ int main(void)
   while (1)
   {
 	
-		set_PWM_freq(500, TIM1, 1);
-		set_PWM_freq(500, TIM3, 1);
+		
   /* USER CODE END WHILE */
 
   /* USER CODE BEGIN 3 */
