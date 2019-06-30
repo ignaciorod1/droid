@@ -46,6 +46,8 @@
 /* USER CODE END Includes */
 
 /* Private variables ---------------------------------------------------------*/
+I2C_HandleTypeDef hi2c1;
+
 SPI_HandleTypeDef hspi1;
 
 TIM_HandleTypeDef htim1;
@@ -54,14 +56,14 @@ TIM_HandleTypeDef htim4;
 /* USER CODE BEGIN PV */
 /* Private variables ---------------------------------------------------------*/
 
-uint8_t spiTx[2], spiRx[2];
+uint8_t spiTx[2], spiRx[2], i2cTx[2], i2cRx[2];
 uint8_t modeReg;
 
 struct l3gd20 {
 	uint8_t x[2];
 	uint8_t y[2];
 	uint8_t z[2];
-}gyro;
+}gyro, acc;
 
 struct Stepper {
 	GPIO_TypeDef *dir_letter;
@@ -81,7 +83,8 @@ static void MX_GPIO_Init(void);
 static void MX_TIM1_Init(void);
 static void MX_TIM4_Init(void);
 static void MX_SPI1_Init(void);
-                                    
+static void MX_I2C1_Init(void);
+
 void HAL_TIM_MspPostInit(TIM_HandleTypeDef *htim);
                                 
                                 
@@ -167,6 +170,7 @@ int main(void)
   MX_TIM1_Init();
   MX_TIM4_Init();
   MX_SPI1_Init();
+  MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
 	HAL_TIM_PWM_Start (&htim1,TIM_CHANNEL_1);  
 	HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_1);
@@ -194,6 +198,16 @@ int main(void)
 	HAL_SPI_Receive(&hspi1, spiRx, 1, 50);
 	HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_SET);
 
+	// i2c test
+	if(HAL_I2C_IsDeviceReady(&hi2c1, 0x33, 1, 10) == HAL_OK){
+		HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_13);
+	}
+	
+	i2cTx[0] = 0x2B;
+	HAL_I2C_Mem_Write(&hi2c1, 0x33, 0x20, 1, i2cTx, 1, 20);
+	HAL_Delay(50);
+	HAL_I2C_Mem_Read(&hi2c1, 0x32, 0x20, 1, i2cRx, 1, 20);
+	
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -293,6 +307,26 @@ void SystemClock_Config(void)
 
   /* SysTick_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(SysTick_IRQn, 0, 0);
+}
+
+/* I2C1 init function */
+static void MX_I2C1_Init(void)
+{
+
+  hi2c1.Instance = I2C1;
+  hi2c1.Init.ClockSpeed = 100000;
+  hi2c1.Init.DutyCycle = I2C_DUTYCYCLE_2;
+  hi2c1.Init.OwnAddress1 = 0;
+  hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+  hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+  hi2c1.Init.OwnAddress2 = 0;
+  hi2c1.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+  hi2c1.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+  if (HAL_I2C_Init(&hi2c1) != HAL_OK)
+  {
+    _Error_Handler(__FILE__, __LINE__);
+  }
+
 }
 
 /* SPI1 init function */
@@ -450,12 +484,13 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOE_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOD_CLK_ENABLE();
+  __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_SET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOD, DIR_2_Pin|DIR_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOD, DIR_2_Pin|DIR_Pin|GPIO_PIN_13, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : PE3 */
   GPIO_InitStruct.Pin = GPIO_PIN_3;
@@ -464,8 +499,8 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : DIR_2_Pin DIR_Pin */
-  GPIO_InitStruct.Pin = DIR_2_Pin|DIR_Pin;
+  /*Configure GPIO pins : DIR_2_Pin DIR_Pin PD13 */
+  GPIO_InitStruct.Pin = DIR_2_Pin|DIR_Pin|GPIO_PIN_13;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
