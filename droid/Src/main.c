@@ -53,7 +53,15 @@ TIM_HandleTypeDef htim4;
 
 /* USER CODE BEGIN PV */
 /* Private variables ---------------------------------------------------------*/
+
 uint8_t spiTx[2], spiRx[2];
+uint8_t modeReg;
+
+struct l3gd20 {
+	uint8_t x[2];
+	uint8_t y[2];
+	uint8_t z[2];
+}gyro;
 
 struct Stepper {
 	GPIO_TypeDef *dir_letter;
@@ -98,6 +106,13 @@ void setDir(struct Stepper *stepper, int dir){
 	HAL_GPIO_WritePin(stepper->dir_letter, stepper->dir_number, stepper->dir);
 }
 
+void turnOnGyro(){
+	HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_RESET);
+}
+
+void turnOffGyro(){
+	HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_SET);
+}
 
 /* USER CODE END PFP */
 
@@ -127,7 +142,8 @@ int main(void)
 	right.vel = 0;
 	right.dir = GPIO_PIN_SET;
 	
-
+	
+	
   /* USER CODE END 1 */
 
   /* MCU Configuration----------------------------------------------------------*/
@@ -164,6 +180,7 @@ int main(void)
 	
 	spiTx[0] = 0x20;
 	spiTx[1] = 0x0F;
+	modeReg = 0x2E;
 	
 	HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_RESET);
 	HAL_SPI_Transmit(&hspi1, spiTx, 2, 50);	
@@ -181,11 +198,36 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+	
   while (1)
   {
-HAL_Delay(1000);
-		setDir(&right, 1);
+	// send data
+  turnOnGyro();
+	spiTx[0] = 0x29 | 0x80;
+	HAL_SPI_Transmit(&hspi1, spiTx, 1, 50); 
+	// read values
+	HAL_SPI_Receive(&hspi1, gyro.x, 1, 50);
+	turnOffGyro();
 		
+	HAL_Delay(50);
+		
+	turnOnGyro();
+	spiTx[0] = 0x2B | 0x80;
+	HAL_SPI_Transmit(&hspi1, spiTx, 1, 50); 
+	// read values
+	HAL_SPI_Receive(&hspi1, gyro.y, 1, 50);
+	turnOffGyro();
+		
+	HAL_Delay(50);
+		
+	turnOnGyro();
+	spiTx[0] = 0x2D | 0x80;
+	HAL_SPI_Transmit(&hspi1, spiTx, 1, 50); 
+	// read values
+	HAL_SPI_Receive(&hspi1, gyro.z, 1, 50);
+	turnOffGyro();
+		
+	HAL_Delay(50);
   /* USER CODE END WHILE */
 
   /* USER CODE BEGIN 3 */
