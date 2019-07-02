@@ -42,15 +42,34 @@
 
 /* USER CODE BEGIN Includes */
 #include <stdbool.h>
+#include <string.h>
 /* USER CODE END Includes */
 
 /* Private variables ---------------------------------------------------------*/
+I2C_HandleTypeDef hi2c1;
+
+SPI_HandleTypeDef hspi1;
+
 TIM_HandleTypeDef htim1;
-TIM_HandleTypeDef htim3;
+TIM_HandleTypeDef htim4;
 
 /* USER CODE BEGIN PV */
 /* Private variables ---------------------------------------------------------*/
 
+uint8_t spiTx[2], spiRx[2], i2cTx[2], i2cRx[2];
+uint8_t modeReg;
+
+struct l3gd20 {
+	uint8_t x[2];
+	uint8_t y[2];
+	uint8_t z[2];
+}gyro;
+
+struct lsm303 {
+	uint16_t x, y, z;
+}acc;
+
+uint8_t i2cBuff[7];
 
 struct Stepper {
 	GPIO_TypeDef *dir_letter;
@@ -68,7 +87,10 @@ struct Stepper {
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_TIM1_Init(void);
-static void MX_TIM3_Init(void);                                    
+static void MX_TIM4_Init(void);
+static void MX_SPI1_Init(void);
+static void MX_I2C1_Init(void);
+
 void HAL_TIM_MspPostInit(TIM_HandleTypeDef *htim);
                                 
                                 
@@ -81,15 +103,77 @@ void setVel(struct Stepper *stepper, uint32_t vel){
 		stepper->timer->CCR1 = vel/2;
 }
 
-void setDir(struct Stepper *stepper, bool dir){
-	GPIO_PinState s;
-	if(dir)	s = GPIO_PIN_SET;
-	else s = GPIO_PIN_RESET;
+void setDir(struct Stepper *stepper, int dir){
 	
-	stepper->dir = s;
-	HAL_GPIO_WritePin(stepper->dir_letter, stepper->dir_number, s);
+	if(dir == 1)	{
+		stepper->dir = GPIO_PIN_SET;
+	}
+	else if (dir == 0){ 
+		stepper->dir = GPIO_PIN_RESET;
+	}
+
+	HAL_GPIO_WritePin(stepper->dir_letter, stepper->dir_number, stepper->dir);
 }
 
+void turnOnGyro(){
+	HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_RESET);
+}
+
+void turnOffGyro(){
+	HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_SET);
+}
+
+void getGyro(){
+	// send data
+  turnOnGyro();
+	spiTx[0] = 0x29 | 0x80;
+	HAL_SPI_Transmit(&hspi1, spiTx, 1, 50); 
+	// read values
+	HAL_SPI_Receive(&hspi1, gyro.x, 1, 50);
+	turnOffGyro();
+		
+	HAL_Delay(50);
+		
+	turnOnGyro();
+	spiTx[0] = 0x2B | 0x80;
+	HAL_SPI_Transmit(&hspi1, spiTx, 1, 50); 
+	// read values
+	HAL_SPI_Receive(&hspi1, gyro.y, 1, 50);
+	turnOffGyro();
+		
+	HAL_Delay(50);
+		
+	turnOnGyro();
+	spiTx[0] = 0x2D | 0x80;
+	HAL_SPI_Transmit(&hspi1, spiTx, 1, 50); 
+	// read values
+	HAL_SPI_Receive(&hspi1, gyro.z, 1, 50);
+	turnOffGyro();
+		
+	HAL_Delay(50);
+}
+
+// transmit data = 0x32
+// receive data = 0x33
+
+void getAcc(){
+	
+	i2cBuff[0] = 0x28 | 0x80;	//sending the register address
+	HAL_I2C_Master_Transmit(&hi2c1, 0x33, i2cBuff, 1, 10);
+	HAL_I2C_Master_Receive(&hi2c1, 0x32, &i2cBuff[1], 6, 10);
+	
+	acc.x = ( i2cBuff[2] << 8 ) | i2cBuff[1];
+	acc.y = ( i2cBuff[4] << 8 ) | i2cBuff[3];
+	acc.z = ( i2cBuff[6] << 8) | i2cBuff[5];
+	
+
+}
+
+void testAcc(){
+		if(HAL_I2C_IsDeviceReady(&hi2c1, 0x33, 1, 10) == HAL_OK){
+		HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_13);
+	}
+}
 
 /* USER CODE END PFP */
 
@@ -105,19 +189,22 @@ void setDir(struct Stepper *stepper, bool dir){
 int main(void)
 {
   /* USER CODE BEGIN 1 */
-	setDir(&left, 0);
 	left.dir_letter = GPIOD;
 	left.dir_number = GPIO_PIN_8;
 	left.timer = TIM1;
 	left.uStepping = 0;
 	left.vel = 0;
-	
-	setDir(&right, 1);
+	left.dir = GPIO_PIN_SET;
+
 	right.dir_letter = GPIOD;
 	right.dir_number = GPIO_PIN_10;
-	right.timer = TIM3;
+	right.timer = TIM4;
 	right.uStepping = 0;
 	right.vel = 0;
+	right.dir = GPIO_PIN_SET;
+	
+	
+	
   /* USER CODE END 1 */
 
   /* MCU Configuration----------------------------------------------------------*/
@@ -139,22 +226,62 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_TIM1_Init();
-  MX_TIM3_Init();
+  MX_TIM4_Init();
+  MX_SPI1_Init();
+  MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
 	HAL_TIM_PWM_Start (&htim1,TIM_CHANNEL_1);  
-	HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
+	HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_1);
 	HAL_Delay(1000);
 	
-	setVel(&left, 500);
-	setVel(&right, 350);
+	setVel(&left, 300 );
+	setDir(&left, 1);
+	
+	setVel(&right, 500);
+  setDir(&right, 0);
+	
+	spiTx[0] = 0x20;
+	spiTx[1] = 0x0F;
+	modeReg = 0x2E;
+	
+	HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_RESET);
+	HAL_SPI_Transmit(&hspi1, spiTx, 2, 50);	
+	HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_SET);
+	
+	HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_RESET);	
+	// adding 1 as the MSB to enable read
+	spiTx[0] = 0x20 | 0x80;
+	// transmiting the new data to the register
+	HAL_SPI_Transmit(&hspi1, spiTx, 1, 50);
+	HAL_SPI_Receive(&hspi1, spiRx, 1, 50);
+	HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_SET);
+
+	// i2c test
+	testAcc();
+	
+	// WRITE DATA
+	i2cBuff[0] = 0x20 | 0x80;	// register 0. the |0x80 puts a '1' as the MSB and therefore enables multiple byte reading.
+	i2cBuff[1] = 0x57;	// data to put in the register
+	HAL_I2C_Master_Transmit(&hi2c1, 0x33, i2cBuff, 2, 10);	
+	HAL_Delay(50);
+	
+
+	
+	// READ DATA
+	i2cBuff[0] = 0x20;
+	HAL_I2C_Master_Transmit(&hi2c1, 0x33, i2cBuff, 1, 10);
+	i2cBuff[1] = 0x00;	// empty the variable
+	HAL_I2C_Master_Receive(&hi2c1, 0x32,  &i2cRx[1], 1, 10);
+	
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+	
   while (1)
   {
-	
-		
+	getGyro();
+	getAcc();
   /* USER CODE END WHILE */
 
   /* USER CODE BEGIN 3 */
@@ -220,6 +347,50 @@ void SystemClock_Config(void)
 
   /* SysTick_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(SysTick_IRQn, 0, 0);
+}
+
+/* I2C1 init function */
+static void MX_I2C1_Init(void)
+{
+
+  hi2c1.Instance = I2C1;
+  hi2c1.Init.ClockSpeed = 100000;
+  hi2c1.Init.DutyCycle = I2C_DUTYCYCLE_2;
+  hi2c1.Init.OwnAddress1 = 0;
+  hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+  hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+  hi2c1.Init.OwnAddress2 = 0;
+  hi2c1.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+  hi2c1.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+  if (HAL_I2C_Init(&hi2c1) != HAL_OK)
+  {
+    _Error_Handler(__FILE__, __LINE__);
+  }
+
+}
+
+/* SPI1 init function */
+static void MX_SPI1_Init(void)
+{
+
+  /* SPI1 parameter configuration*/
+  hspi1.Instance = SPI1;
+  hspi1.Init.Mode = SPI_MODE_MASTER;
+  hspi1.Init.Direction = SPI_DIRECTION_2LINES;
+  hspi1.Init.DataSize = SPI_DATASIZE_8BIT;
+  hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
+  hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
+  hspi1.Init.NSS = SPI_NSS_SOFT;
+  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_8;
+  hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
+  hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
+  hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
+  hspi1.Init.CRCPolynomial = 10;
+  if (HAL_SPI_Init(&hspi1) != HAL_OK)
+  {
+    _Error_Handler(__FILE__, __LINE__);
+  }
+
 }
 
 /* TIM1 init function */
@@ -288,38 +459,38 @@ static void MX_TIM1_Init(void)
 
 }
 
-/* TIM3 init function */
-static void MX_TIM3_Init(void)
+/* TIM4 init function */
+static void MX_TIM4_Init(void)
 {
 
   TIM_ClockConfigTypeDef sClockSourceConfig;
   TIM_MasterConfigTypeDef sMasterConfig;
   TIM_OC_InitTypeDef sConfigOC;
 
-  htim3.Instance = TIM3;
-  htim3.Init.Prescaler = 16;
-  htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim3.Init.Period = 1000;
-  htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
+  htim4.Instance = TIM4;
+  htim4.Init.Prescaler = 16;
+  htim4.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim4.Init.Period = 1000;
+  htim4.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  if (HAL_TIM_Base_Init(&htim4) != HAL_OK)
   {
     _Error_Handler(__FILE__, __LINE__);
   }
 
   sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
-  if (HAL_TIM_ConfigClockSource(&htim3, &sClockSourceConfig) != HAL_OK)
+  if (HAL_TIM_ConfigClockSource(&htim4, &sClockSourceConfig) != HAL_OK)
   {
     _Error_Handler(__FILE__, __LINE__);
   }
 
-  if (HAL_TIM_PWM_Init(&htim3) != HAL_OK)
+  if (HAL_TIM_PWM_Init(&htim4) != HAL_OK)
   {
     _Error_Handler(__FILE__, __LINE__);
   }
 
   sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
   sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
-  if (HAL_TIMEx_MasterConfigSynchronization(&htim3, &sMasterConfig) != HAL_OK)
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim4, &sMasterConfig) != HAL_OK)
   {
     _Error_Handler(__FILE__, __LINE__);
   }
@@ -328,12 +499,12 @@ static void MX_TIM3_Init(void)
   sConfigOC.Pulse = 0;
   sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
   sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
-  if (HAL_TIM_PWM_ConfigChannel(&htim3, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
+  if (HAL_TIM_PWM_ConfigChannel(&htim4, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
   {
     _Error_Handler(__FILE__, __LINE__);
   }
 
-  HAL_TIM_MspPostInit(&htim3);
+  HAL_TIM_MspPostInit(&htim4);
 
 }
 
@@ -350,15 +521,26 @@ static void MX_GPIO_Init(void)
   GPIO_InitTypeDef GPIO_InitStruct;
 
   /* GPIO Ports Clock Enable */
-  __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOE_CLK_ENABLE();
+  __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOD_CLK_ENABLE();
+  __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOD, DIR_2_Pin|DIR_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_SET);
 
-  /*Configure GPIO pins : DIR_2_Pin DIR_Pin */
-  GPIO_InitStruct.Pin = DIR_2_Pin|DIR_Pin;
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOD, DIR_2_Pin|DIR_Pin|GPIO_PIN_13, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin : PE3 */
+  GPIO_InitStruct.Pin = GPIO_PIN_3;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : DIR_2_Pin DIR_Pin PD13 */
+  GPIO_InitStruct.Pin = DIR_2_Pin|DIR_Pin|GPIO_PIN_13;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
