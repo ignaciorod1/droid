@@ -63,7 +63,13 @@ struct l3gd20 {
 	uint8_t x[2];
 	uint8_t y[2];
 	uint8_t z[2];
-}gyro, acc;
+}gyro;
+
+struct lsm303 {
+	uint16_t x, y, z;
+}acc;
+
+uint8_t i2cBuff[7];
 
 struct Stepper {
 	GPIO_TypeDef *dir_letter;
@@ -115,6 +121,58 @@ void turnOnGyro(){
 
 void turnOffGyro(){
 	HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_SET);
+}
+
+void getGyro(){
+	// send data
+  turnOnGyro();
+	spiTx[0] = 0x29 | 0x80;
+	HAL_SPI_Transmit(&hspi1, spiTx, 1, 50); 
+	// read values
+	HAL_SPI_Receive(&hspi1, gyro.x, 1, 50);
+	turnOffGyro();
+		
+	HAL_Delay(50);
+		
+	turnOnGyro();
+	spiTx[0] = 0x2B | 0x80;
+	HAL_SPI_Transmit(&hspi1, spiTx, 1, 50); 
+	// read values
+	HAL_SPI_Receive(&hspi1, gyro.y, 1, 50);
+	turnOffGyro();
+		
+	HAL_Delay(50);
+		
+	turnOnGyro();
+	spiTx[0] = 0x2D | 0x80;
+	HAL_SPI_Transmit(&hspi1, spiTx, 1, 50); 
+	// read values
+	HAL_SPI_Receive(&hspi1, gyro.z, 1, 50);
+	turnOffGyro();
+		
+	HAL_Delay(50);
+}
+
+// transmit data = 0x32
+// receive data = 0x33
+
+void getAcc(){
+	
+	i2cBuff[0] = 0x28 | 0x80;	//sending the register address
+	HAL_I2C_Master_Transmit(&hi2c1, 0x33, i2cBuff, 1, 10);
+	HAL_I2C_Master_Receive(&hi2c1, 0x32, &i2cBuff[1], 6, 10);
+	
+	acc.x = ( i2cBuff[2] << 8 ) | i2cBuff[1];
+	acc.y = ( i2cBuff[4] << 8 ) | i2cBuff[3];
+	acc.z = ( i2cBuff[6] << 8) | i2cBuff[5];
+	
+
+}
+
+void testAcc(){
+		if(HAL_I2C_IsDeviceReady(&hi2c1, 0x33, 1, 10) == HAL_OK){
+		HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_13);
+	}
 }
 
 /* USER CODE END PFP */
@@ -199,14 +257,21 @@ int main(void)
 	HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_SET);
 
 	// i2c test
-	if(HAL_I2C_IsDeviceReady(&hi2c1, 0x33, 1, 10) == HAL_OK){
-		HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_13);
-	}
+	testAcc();
 	
-	i2cTx[0] = 0x2B;
-	HAL_I2C_Mem_Write(&hi2c1, 0x33, 0x20, 1, i2cTx, 1, 20);
+	// WRITE DATA
+	i2cBuff[0] = 0x20 | 0x80;	// register 0. the |0x80 puts a '1' as the MSB and therefore enables multiple byte reading.
+	i2cBuff[1] = 0x57;	// data to put in the register
+	HAL_I2C_Master_Transmit(&hi2c1, 0x33, i2cBuff, 2, 10);	
 	HAL_Delay(50);
-	HAL_I2C_Mem_Read(&hi2c1, 0x32, 0x20, 1, i2cRx, 1, 20);
+	
+
+	
+	// READ DATA
+	i2cBuff[0] = 0x20;
+	HAL_I2C_Master_Transmit(&hi2c1, 0x33, i2cBuff, 1, 10);
+	i2cBuff[1] = 0x00;	// empty the variable
+	HAL_I2C_Master_Receive(&hi2c1, 0x32,  &i2cRx[1], 1, 10);
 	
   /* USER CODE END 2 */
 
@@ -215,33 +280,8 @@ int main(void)
 	
   while (1)
   {
-	// send data
-  turnOnGyro();
-	spiTx[0] = 0x29 | 0x80;
-	HAL_SPI_Transmit(&hspi1, spiTx, 1, 50); 
-	// read values
-	HAL_SPI_Receive(&hspi1, gyro.x, 1, 50);
-	turnOffGyro();
-		
-	HAL_Delay(50);
-		
-	turnOnGyro();
-	spiTx[0] = 0x2B | 0x80;
-	HAL_SPI_Transmit(&hspi1, spiTx, 1, 50); 
-	// read values
-	HAL_SPI_Receive(&hspi1, gyro.y, 1, 50);
-	turnOffGyro();
-		
-	HAL_Delay(50);
-		
-	turnOnGyro();
-	spiTx[0] = 0x2D | 0x80;
-	HAL_SPI_Transmit(&hspi1, spiTx, 1, 50); 
-	// read values
-	HAL_SPI_Receive(&hspi1, gyro.z, 1, 50);
-	turnOffGyro();
-		
-	HAL_Delay(50);
+	getGyro();
+	getAcc();
   /* USER CODE END WHILE */
 
   /* USER CODE BEGIN 3 */
