@@ -56,20 +56,16 @@ TIM_HandleTypeDef htim4;
 /* USER CODE BEGIN PV */
 /* Private variables ---------------------------------------------------------*/
 
-uint8_t spiTx[2], spiRx[2], i2cTx[2], i2cRx[2];
+uint8_t spiTx[2], spiRx[7];
 uint8_t modeReg;
+uint8_t i2cRx[2], i2cBuff[7];
 
-struct l3gd20 {
-	uint8_t x[2];
-	uint8_t y[2];
-	uint8_t z[2];
-}gyro;
 
 struct lsm303 {
-	uint16_t x, y, z;
-}acc;
+	float x, y, z;
+}gyro;
 
-uint8_t i2cBuff[7];
+float acc[3];
 
 struct Stepper {
 	GPIO_TypeDef *dir_letter;
@@ -124,37 +120,32 @@ void turnOffGyro(){
 }
 
 void getGyro(){
+	int i;
+	for( i = 0; i < 8; i+=2){ 
 	// send data
-  turnOnGyro();
-	spiTx[0] = 0x29 | 0x80;
-	HAL_SPI_Transmit(&hspi1, spiTx, 1, 50); 
+  turnOnGyro();	
+	spiTx[0] = (0x28 + i) | 0x80;
+	HAL_SPI_Transmit(&hspi1, spiTx, 1, 10);	// LOW X AXIS 
 	// read values
-	HAL_SPI_Receive(&hspi1, gyro.x, 1, 50);
+	HAL_SPI_Receive(&hspi1, &spiRx[ 0 + i ], 2, 10);
 	turnOffGyro();
-		
-	HAL_Delay(50);
-		
-	turnOnGyro();
-	spiTx[0] = 0x2B | 0x80;
-	HAL_SPI_Transmit(&hspi1, spiTx, 1, 50); 
-	// read values
-	HAL_SPI_Receive(&hspi1, gyro.y, 1, 50);
-	turnOffGyro();
-		
-	HAL_Delay(50);
-		
-	turnOnGyro();
-	spiTx[0] = 0x2D | 0x80;
-	HAL_SPI_Transmit(&hspi1, spiTx, 1, 50); 
-	// read values
-	HAL_SPI_Receive(&hspi1, gyro.z, 1, 50);
-	turnOffGyro();
-		
-	HAL_Delay(50);
+	
+	HAL_Delay(10);
+	}
+	
+	gyro.x = (spiRx[1] << 8) | spiRx[0];
+	gyro.y = (spiRx[3] << 8) | spiRx[2];
+	gyro.z = (spiRx[5] << 8) | spiRx[6];
 }
 
 // transmit data = 0x32
 // receive data = 0x33
+void testAcc(){
+		if(HAL_I2C_IsDeviceReady(&hi2c1, 0x33, 1, 10) == HAL_OK){
+		HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_13);
+	}
+}
+
 
 void getAcc(){
 	
@@ -162,17 +153,20 @@ void getAcc(){
 	HAL_I2C_Master_Transmit(&hi2c1, 0x33, i2cBuff, 1, 10);
 	HAL_I2C_Master_Receive(&hi2c1, 0x32, &i2cBuff[1], 6, 10);
 	
-	acc.x = ( i2cBuff[2] << 8 ) | i2cBuff[1];
-	acc.y = ( i2cBuff[4] << 8 ) | i2cBuff[3];
-	acc.z = ( i2cBuff[6] << 8) | i2cBuff[5];
+	int16_t data[3];
+	data[0] = (( i2cBuff[2] << 8 ) | i2cBuff[1])  >> 4;
+	data[1] = ((i2cBuff[4] << 8 ) | i2cBuff[3]) >> 4;
+	data[2]	= (( i2cBuff[6] << 8 ) | i2cBuff[5]) >> 4;
 	
-
+	for(int i = 0; i < 3; i++){
+		if ( data[i] > 0x7FF){	//	negative number
+			acc[i] = - (data[i] ^ 0xFFF) + 1;
+		}
+		else	acc[i] = data[i];
+		
+		acc[i] /= 1000;
 }
 
-void testAcc(){
-		if(HAL_I2C_IsDeviceReady(&hi2c1, 0x33, 1, 10) == HAL_OK){
-		HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_13);
-	}
 }
 
 /* USER CODE END PFP */
@@ -261,23 +255,31 @@ int main(void)
 	
 	// WRITE DATA
 	i2cBuff[0] = 0x20 | 0x80;	// register 0. the |0x80 puts a '1' as the MSB and therefore enables multiple byte reading.
-	i2cBuff[1] = 0x57;	// data to put in the register
+	i2cBuff[1] = 0x47;	// data to put in the register
 	HAL_I2C_Master_Transmit(&hi2c1, 0x33, i2cBuff, 2, 10);	
 	HAL_Delay(50);
 	
+	i2cBuff[0] = 0x23 | 0x80;	// register 0. the |0x80 puts a '1' as the MSB and therefore enables multiple byte reading.
+	i2cBuff[1] = 0x0;	// data to put in the register
+	HAL_I2C_Master_Transmit(&hi2c1, 0x33, i2cBuff, 2, 10);	
+	HAL_Delay(50);
 
-	
 	// READ DATA
 	i2cBuff[0] = 0x20;
 	HAL_I2C_Master_Transmit(&hi2c1, 0x33, i2cBuff, 1, 10);
 	i2cBuff[1] = 0x00;	// empty the variable
 	HAL_I2C_Master_Receive(&hi2c1, 0x32,  &i2cRx[1], 1, 10);
 	
+	// SET ACCELEROMETER VALUES
+	/*
+	i2cBuff[0] = 0x21 | 0x80;	// register with filtering options
+	i2cBuff[1] = 01
+HAL_I2C_Master_Transmit(&hi2c1, 0x33, 
+	*/
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-	
   while (1)
   {
 	getGyro();
