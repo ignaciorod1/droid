@@ -42,7 +42,7 @@
 
 /* USER CODE BEGIN Includes */
 #include <stdbool.h>
-#include <string.h>
+#include <math.h>
 /* USER CODE END Includes */
 
 /* Private variables ---------------------------------------------------------*/
@@ -56,20 +56,13 @@ TIM_HandleTypeDef htim4;
 /* USER CODE BEGIN PV */
 /* Private variables ---------------------------------------------------------*/
 
-uint8_t spiTx[2], spiRx[2], i2cTx[2], i2cRx[2];
+uint8_t spiTx[2], spiRx[6];
 uint8_t modeReg;
+uint8_t i2cRx[2], i2cBuff[7];
 
-struct l3gd20 {
-	uint8_t x[2];
-	uint8_t y[2];
-	uint8_t z[2];
-}gyro;
-
-struct lsm303 {
-	uint16_t x, y, z;
-}acc;
-
-uint8_t i2cBuff[7];
+float acc[3], gyro[3], acc_deg[3] = {0,0,0}, gyro_deg[3] = {0,0,0}, deg[3] = {0,0,0};
+float total_acc;
+float Ka, Kg;	// gains of the complementary filter
 
 struct Stepper {
 	GPIO_TypeDef *dir_letter;
@@ -124,37 +117,40 @@ void turnOffGyro(){
 }
 
 void getGyro(){
-	// send data
-  turnOnGyro();
-	spiTx[0] = 0x29 | 0x80;
-	HAL_SPI_Transmit(&hspi1, spiTx, 1, 50); 
+	uint16_t data[3];
+		
+  // send data
+	turnOnGyro();	
+	spiTx[0] = GYRO_AXES_DATA_REG | 0xC0;
+	HAL_SPI_Transmit(&hspi1, spiTx, 1, 10); 
 	// read values
-	HAL_SPI_Receive(&hspi1, gyro.x, 1, 50);
+	HAL_SPI_Receive(&hspi1, spiRx, 6, 10);
 	turnOffGyro();
+	HAL_Delay(10);
+	
+	data[0] = (spiRx[1] << 8) | spiRx[0];
+	data[1] = (spiRx[3] << 8) | spiRx[2];
+	data[2] = (spiRx[5] << 8) | spiRx[4];
+	
+	
+	for(int i = 0; i < 3; i++){	//C2 data processing				
+		if(data[i] >= 0x8000){
+			gyro[i] = - ( data[i] ^ 0xFFFF) + 1;
+		}
+		else	gyro[i] =  data[i];
 		
-	HAL_Delay(50);
-		
-	turnOnGyro();
-	spiTx[0] = 0x2B | 0x80;
-	HAL_SPI_Transmit(&hspi1, spiTx, 1, 50); 
-	// read values
-	HAL_SPI_Receive(&hspi1, gyro.y, 1, 50);
-	turnOffGyro();
-		
-	HAL_Delay(50);
-		
-	turnOnGyro();
-	spiTx[0] = 0x2D | 0x80;
-	HAL_SPI_Transmit(&hspi1, spiTx, 1, 50); 
-	// read values
-	HAL_SPI_Receive(&hspi1, gyro.z, 1, 50);
-	turnOffGyro();
-		
-	HAL_Delay(50);
+		gyro[i] = gyro[i] * GYRO_SENS;
+	}
 }
 
 // transmit data = 0x32
 // receive data = 0x33
+void testAcc(){
+		if(HAL_I2C_IsDeviceReady(&hi2c1, 0x33, 1, 10) == HAL_OK){
+		HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_13);
+	}
+}
+
 
 void getAcc(){
 	
@@ -162,19 +158,42 @@ void getAcc(){
 	HAL_I2C_Master_Transmit(&hi2c1, 0x33, i2cBuff, 1, 10);
 	HAL_I2C_Master_Receive(&hi2c1, 0x32, &i2cBuff[1], 6, 10);
 	
-	acc.x = ( i2cBuff[2] << 8 ) | i2cBuff[1];
-	acc.y = ( i2cBuff[4] << 8 ) | i2cBuff[3];
-	acc.z = ( i2cBuff[6] << 8) | i2cBuff[5];
+	int16_t data[3];
+	data[0] = (( i2cBuff[2] << 8 ) | i2cBuff[1])  >> 4;
+	data[1] = ((i2cBuff[4] << 8 ) | i2cBuff[3]) >> 4;
+	data[2]	= (( i2cBuff[6] << 8 ) | i2cBuff[5]) >> 4;
 	
+	for(int i = 0; i < 3; i++){
+		if ( data[i] > 0x7FF){	//	negative number
+			acc[i] = - (data[i] ^ 0xFFF) + 1;
+		}
+		else	acc[i] = data[i];
+		
+		acc[i] /= 1024;
+		
+		total_acc = sqrt(acc[0] *acc[0] + acc[1]*acc[1] + acc[2]*acc[2]);
+	}	
 
 }
 
-void testAcc(){
-		if(HAL_I2C_IsDeviceReady(&hi2c1, 0x33, 1, 10) == HAL_OK){
-		HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_13);
+void gyro_int_values(){
+	for( int i = 0; i < 3; i++){
+		gyro_deg[i] += gyro[i] / (float)(1.0/95.0);
 	}
 }
 
+void acc2angle(){
+
+	acc_deg[0] = asin(acc[1] / total_acc) * 57.2958;		// ROLL
+	acc_deg[1] = asin(-acc[0] /total_acc) * 57.2958;		// PITCH
+}	
+
+void angles(){
+	
+	for(int i = 0; i < 2; i++){
+		deg[i] = Kg*(deg[i] + gyro_deg[i] * (1/95)) + Ka*acc_deg[i]; 
+	}
+}
 /* USER CODE END PFP */
 
 /* USER CODE BEGIN 0 */
@@ -203,7 +222,8 @@ int main(void)
 	right.vel = 0;
 	right.dir = GPIO_PIN_SET;
 	
-	
+	Kg = 0.9;
+	Ka = 1 - Kg;
 	
   /* USER CODE END 1 */
 
@@ -241,47 +261,58 @@ int main(void)
   setDir(&right, 0);
 	
 	spiTx[0] = 0x20;
-	spiTx[1] = 0x0F;
-	modeReg = 0x2E;
+	spiTx[1] = 0x0F;		//  95 Hz of output data rate and 12.5 Hz cutoff low freq
 	
-	HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_RESET);
+	turnOnGyro();
 	HAL_SPI_Transmit(&hspi1, spiTx, 2, 50);	
-	HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_SET);
+  turnOffGyro();
 	
-	HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_RESET);	
+	turnOnGyro();	
 	// adding 1 as the MSB to enable read
-	spiTx[0] = 0x20 | 0x80;
+	spiTx[0] = GYRO_CTRL_REG1 | 0x80;
 	// transmiting the new data to the register
 	HAL_SPI_Transmit(&hspi1, spiTx, 1, 50);
 	HAL_SPI_Receive(&hspi1, spiRx, 1, 50);
-	HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_SET);
-
+	turnOffGyro();
+	
+	
+	spiTx[0] = GYRO_SENS_REG;
+	spiTx[1] = GYRO_SENS_FS;
+	turnOnGyro();
+	HAL_SPI_Transmit(&hspi1, spiTx, 2, 20);
+	turnOffGyro();
+	
 	// i2c test
 	testAcc();
 	
 	// WRITE DATA
 	i2cBuff[0] = 0x20 | 0x80;	// register 0. the |0x80 puts a '1' as the MSB and therefore enables multiple byte reading.
-	i2cBuff[1] = 0x57;	// data to put in the register
+	i2cBuff[1] = 0x47;	// data to put in the register
 	HAL_I2C_Master_Transmit(&hi2c1, 0x33, i2cBuff, 2, 10);	
 	HAL_Delay(50);
 	
+	i2cBuff[0] = 0x23 | 0x80;	// register 0. the |0x80 puts a '1' as the MSB and therefore enables multiple byte reading.
+	i2cBuff[1] = 0x0;	// data to put in the register
+	HAL_I2C_Master_Transmit(&hi2c1, 0x33, i2cBuff, 2, 10);	
+	HAL_Delay(50);
 
-	
 	// READ DATA
 	i2cBuff[0] = 0x20;
 	HAL_I2C_Master_Transmit(&hi2c1, 0x33, i2cBuff, 1, 10);
 	i2cBuff[1] = 0x00;	// empty the variable
 	HAL_I2C_Master_Receive(&hi2c1, 0x32,  &i2cRx[1], 1, 10);
-	
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-	
   while (1)
   {
 	getGyro();
 	getAcc();
+  gyro_int_values();
+	acc2angle();
+	angles();
   /* USER CODE END WHILE */
 
   /* USER CODE BEGIN 3 */
