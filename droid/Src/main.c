@@ -42,8 +42,7 @@
 
 /* USER CODE BEGIN Includes */
 #include <stdbool.h>
-#include <string.h>
-
+#include <math.h>
 /* USER CODE END Includes */
 
 /* Private variables ---------------------------------------------------------*/
@@ -61,8 +60,7 @@ uint8_t spiTx[2], spiRx[6];
 uint8_t modeReg;
 uint8_t i2cRx[2], i2cBuff[7];
 
-float acc[3], gyro[3];
-float gyro_lpf[3] = {0,0,0}; //gyro_lpf is for storing data for the lpf
+float acc[3], gyro[3], acc_deg[3] = {0,0,0}, gyro_deg[3] = {0,0,0};
 
 struct Stepper {
 	GPIO_TypeDef *dir_letter;
@@ -139,7 +137,7 @@ void getGyro(){
 		}
 		else	gyro[i] =  data[i];
 		
-		gyro[i] = gyro[i] / GYRO_SENS;
+		gyro[i] = gyro[i] * GYRO_SENS;
 	}
 }
 
@@ -173,6 +171,18 @@ void getAcc(){
 	}	
 
 }
+
+void gyro_int_values(){
+	for( int i = 0; i < 3; i++){
+		gyro_deg[i] += gyro[i] / (float)(1.0/95.0);
+	}
+}
+
+void acc2angle(){
+
+	acc_deg[0] = atan(acc[2] / acc[1]);		// ROLL
+	acc_deg[1] = atan(acc[2] / acc[0]);		// PITCH
+}	
 
 /* USER CODE END PFP */
 
@@ -240,7 +250,7 @@ int main(void)
   setDir(&right, 0);
 	
 	spiTx[0] = 0x20;
-	spiTx[1] = 0x0F;	
+	spiTx[1] = 0x0F;		//  95 Hz of output data rate and 12.5 Hz cutoff low freq
 	
 	turnOnGyro();
 	HAL_SPI_Transmit(&hspi1, spiTx, 2, 50);	
@@ -248,7 +258,7 @@ int main(void)
 	
 	turnOnGyro();	
 	// adding 1 as the MSB to enable read
-	spiTx[0] = 0x20 | 0x80;
+	spiTx[0] = GYRO_CTRL_REG1 | 0x80;
 	// transmiting the new data to the register
 	HAL_SPI_Transmit(&hspi1, spiTx, 1, 50);
 	HAL_SPI_Receive(&hspi1, spiRx, 1, 50);
@@ -280,13 +290,7 @@ int main(void)
 	HAL_I2C_Master_Transmit(&hi2c1, 0x33, i2cBuff, 1, 10);
 	i2cBuff[1] = 0x00;	// empty the variable
 	HAL_I2C_Master_Receive(&hi2c1, 0x32,  &i2cRx[1], 1, 10);
-	
-	// SET ACCELEROMETER VALUES
-	/*
-	i2cBuff[0] = 0x21 | 0x80;	// register with filtering options
-	i2cBuff[1] = 01
-HAL_I2C_Master_Transmit(&hi2c1, 0x33, 
-	*/
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -295,10 +299,8 @@ HAL_I2C_Master_Transmit(&hi2c1, 0x33,
   {
 	getGyro();
 	getAcc();
+  gyro_int_values();
 	
-	for( int i = 0; i < 3; i++){
-   gyro_lpf[i] = gyro_lpf[i] - (LPF_Beta * (gyro_lpf[i] - gyro[i]));	
-	}
   /* USER CODE END WHILE */
 
   /* USER CODE BEGIN 3 */

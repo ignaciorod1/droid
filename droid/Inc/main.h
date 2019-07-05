@@ -63,27 +63,27 @@
 
 /* USER CODE BEGIN Private defines */
 
-#define LPF_Beta	0.1
 #define GYRO_500
 #define GYRO_SENS_REG 0x23
 #define GYRO_AXES_DATA_REG 0x28
+#define GYRO_CTRL_REG1 0x20
 
 #ifdef GYRO_250
 	#define GYRO_SENS_FS 0
 	#define GYRO_DPS	250
-	#define GYRO_SENS 114.3
+	#define GYRO_SENS 0.00875
 #endif
 
 #ifdef GYRO_500
   #define GYRO_SENS_FS 0x10
 	#define GYRO_DPS	500
-	#define GYRO_SENS 57.1
+	#define GYRO_SENS 0.0175
 #endif
 
 #ifdef GYRO_2000
   #define GYRO_SENS_FS 0x18
 	#define GYRO_DPS	2000
-	#define GYRO_SENS 14.3
+	#define GYRO_SENS 0.07
 #endif
 
 /* USER CODE END Private defines */
