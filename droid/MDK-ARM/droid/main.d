@@ -33,4 +33,4 @@ droid\main.o: ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_spi.h
 droid\main.o: ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_tim.h
 droid\main.o: ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_tim_ex.h
 droid\main.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\stdbool.h
-droid\main.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\string.h
+droid\main.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\math.h

@@ -60,7 +60,9 @@ uint8_t spiTx[2], spiRx[6];
 uint8_t modeReg;
 uint8_t i2cRx[2], i2cBuff[7];
 
-float acc[3], gyro[3], acc_deg[3] = {0,0,0}, gyro_deg[3] = {0,0,0};
+float acc[3], gyro[3], acc_deg[3] = {0,0,0}, gyro_deg[3] = {0,0,0}, deg[3] = {0,0,0};
+float total_acc;
+float Ka, Kg;	// gains of the complementary filter
 
 struct Stepper {
 	GPIO_TypeDef *dir_letter;
@@ -167,7 +169,9 @@ void getAcc(){
 		}
 		else	acc[i] = data[i];
 		
-		acc[i] /= 1000;
+		acc[i] /= 1024;
+		
+		total_acc = sqrt(acc[0] *acc[0] + acc[1]*acc[1] + acc[2]*acc[2]);
 	}	
 
 }
@@ -180,10 +184,16 @@ void gyro_int_values(){
 
 void acc2angle(){
 
-	acc_deg[0] = atan(acc[2] / acc[1]);		// ROLL
-	acc_deg[1] = atan(acc[2] / acc[0]);		// PITCH
+	acc_deg[0] = asin(acc[1] / total_acc) * 57.2958;		// ROLL
+	acc_deg[1] = asin(-acc[0] /total_acc) * 57.2958;		// PITCH
 }	
 
+void angles(){
+	
+	for(int i = 0; i < 2; i++){
+		deg[i] = Kg*(deg[i] + gyro_deg[i] * (1/95)) + Ka*acc_deg[i]; 
+	}
+}
 /* USER CODE END PFP */
 
 /* USER CODE BEGIN 0 */
@@ -212,7 +222,8 @@ int main(void)
 	right.vel = 0;
 	right.dir = GPIO_PIN_SET;
 	
-
+	Kg = 0.9;
+	Ka = 1 - Kg;
 	
   /* USER CODE END 1 */
 
@@ -300,7 +311,8 @@ int main(void)
 	getGyro();
 	getAcc();
   gyro_int_values();
-	
+	acc2angle();
+	angles();
   /* USER CODE END WHILE */
 
   /* USER CODE BEGIN 3 */
