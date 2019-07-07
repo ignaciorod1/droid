@@ -61,8 +61,8 @@ uint8_t modeReg;
 uint8_t i2cRx[8], i2cBuff[7], i2cBuffm[7];
 int i = 0;
 float acc[3], mag[3], gyro[3], acc_deg[3] = {0,0,0}, gyro_deg[3] = {0,0,0}, deg[3] = {0,0,0};
-float offsetMag[3];
-float total_acc;
+float offsetMag[3], deltaMag[3], scale[3];
+float total_acc, avg_delta;
 float Ka, Kg;	// gains of the complementary filter
 
 uint8_t mg[9];
@@ -215,9 +215,14 @@ void getMagnetometer(){
 
 
 void calib_magnetometer(){
+		
 	for(int i = 0; i < 3; i++){
 		mag[i] = offsetMag[i];
+		scale[i] = avg_delta / deltaMag[i];
+		mag[i] *= scale[i];
 	}
+	
+	
 }
 
 
@@ -275,6 +280,12 @@ int main(void)
 	offsetMag[1] = -0.065;
 	offsetMag[2] = -0.325;
 	
+	deltaMag[0] = 1.315;
+	deltaMag[1] = 1.315;
+	deltaMag[2] = 1.325;
+	
+	avg_delta = deltaMag[0] + deltaMag[1] + deltaMag[2];
+	avg_delta /= 3;
   /* USER CODE END 1 */
 
   /* MCU Configuration----------------------------------------------------------*/
