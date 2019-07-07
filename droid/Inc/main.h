@@ -63,6 +63,14 @@
 
 /* USER CODE BEGIN Private defines */
 
+#define ACC_ADD_WRITE 0x32
+#define ACC_ADD_READ 0x33
+
+#define MAG_ADD_WRITE 0x3C
+#define MAG_ADD_READ 0x3D
+
+#define MAG_4
+
 #define GYRO_500
 #define GYRO_SENS_REG 0x23
 #define GYRO_AXES_DATA_REG 0x28
@@ -85,6 +93,21 @@
 	#define GYRO_DPS	2000
 	#define GYRO_SENS 0.07
 #endif
+
+#ifdef MAG_4
+	#define MAG_GN 0x80
+	#define MAG_GAUSS 4.0
+	#define MAG_SENS_XY 450
+	#define MAG_SENS_Z 400
+#endif
+
+#ifdef MAG_25
+	#define MAG_GN 0x60
+	#define MAG_GAUSS 2.5
+	#define MAG_SENS_XY 670
+	#define MAG_SENS_Z 600
+#endif
+
 
 /* USER CODE END Private defines */
 

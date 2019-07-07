@@ -56,13 +56,15 @@ TIM_HandleTypeDef htim4;
 /* USER CODE BEGIN PV */
 /* Private variables ---------------------------------------------------------*/
 
-uint8_t spiTx[2], spiRx[6];
+uint8_t spiTx[3], spiRx[6];
 uint8_t modeReg;
-uint8_t i2cRx[2], i2cBuff[7];
-
-float acc[3], gyro[3], acc_deg[3] = {0,0,0}, gyro_deg[3] = {0,0,0}, deg[3] = {0,0,0};
+uint8_t i2cRx[8], i2cBuff[7], i2cBuffm[7];
+int i = 0;
+float acc[3], mag[3], gyro[3], acc_deg[3] = {0,0,0}, gyro_deg[3] = {0,0,0}, deg[3] = {0,0,0};
 float total_acc;
 float Ka, Kg;	// gains of the complementary filter
+
+uint8_t mg[9];
 
 struct Stepper {
 	GPIO_TypeDef *dir_letter;
@@ -146,9 +148,18 @@ void getGyro(){
 // transmit data = 0x32
 // receive data = 0x33
 void testAcc(){
-		if(HAL_I2C_IsDeviceReady(&hi2c1, 0x33, 1, 10) == HAL_OK){
-		HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_13);
-	}
+		if(HAL_I2C_IsDeviceReady(&hi2c1, 0x33, 1, 10) == HAL_OK)
+				HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_13);
+		
+		
+		if(HAL_I2C_IsDeviceReady(&hi2c1, MAG_ADD_READ, 1, 10) == HAL_OK)
+				HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_14);
+		
+		
+		if(HAL_I2C_IsDeviceReady(&hi2c1, 0x54, 1, 10) == HAL_OK)
+				HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_15);
+		
+
 }
 
 
@@ -159,9 +170,9 @@ void getAcc(){
 	HAL_I2C_Master_Receive(&hi2c1, 0x32, &i2cBuff[1], 6, 10);
 	
 	int16_t data[3];
-	data[0] = (( i2cBuff[2] << 8 ) | i2cBuff[1])  >> 4;
-	data[1] = ((i2cBuff[4] << 8 ) | i2cBuff[3]) >> 4;
-	data[2]	= (( i2cBuff[6] << 8 ) | i2cBuff[5]) >> 4;
+	data[0] = (( i2cBuff[2] << 8 ) | i2cBuff[1]) >> 4;
+	data[1] = (( i2cBuff[4] << 8 ) | i2cBuff[3]) >> 4;
+	data[2] = (( i2cBuff[6] << 8 ) | i2cBuff[5]) >> 4;
 	
 	for(int i = 0; i < 3; i++){
 		if ( data[i] > 0x7FF){	//	negative number
@@ -174,6 +185,31 @@ void getAcc(){
 		total_acc = sqrt(acc[0] *acc[0] + acc[1]*acc[1] + acc[2]*acc[2]);
 	}	
 
+}
+
+void getMagnetometer(){
+	
+	i2cBuffm[0] = 0x03;	//sending the register address
+	HAL_I2C_Master_Transmit(&hi2c1, MAG_ADD_WRITE, i2cBuffm, 1, 10);
+	HAL_I2C_Master_Receive(&hi2c1, MAG_ADD_READ, &i2cBuffm[1], 6, 10);
+	
+	HAL_I2C_Master_Transmit(&hi2c1, 0x54, i2cBuffm, 6, 10);
+
+	int16_t data[3];
+	data[0] = ( i2cBuffm[1] << 8 ) | i2cBuffm[2];
+	data[1] = ( i2cBuffm[3] << 8 ) | i2cBuffm[4];
+	data[2] = ( i2cBuffm[5] << 8 ) | i2cBuffm[6];
+	
+	for(int i = 0; i < 3; i++){
+		if ( data[i] > 0x7FF){	//	negative number
+			mag[i] = - (data[i] ^ 0xFFF) + 1;
+		}
+		else	mag[i] = data[i];
+	}	
+		
+		mag[0] /= MAG_SENS_XY;
+		mag[1] /= MAG_SENS_XY;
+		mag[2] /= MAG_SENS_Z;
 }
 
 void gyro_int_values(){
@@ -194,6 +230,7 @@ void angles(){
 		deg[i] = Kg*(deg[i] + gyro_deg[i] * (1/95)) + Ka*acc_deg[i]; 
 	}
 }
+	
 /* USER CODE END PFP */
 
 /* USER CODE BEGIN 0 */
@@ -222,7 +259,7 @@ int main(void)
 	right.vel = 0;
 	right.dir = GPIO_PIN_SET;
 	
-	Kg = 0.9;
+	Kg = 0.95;
 	Ka = 1 - Kg;
 	
   /* USER CODE END 1 */
@@ -285,6 +322,9 @@ int main(void)
 	// i2c test
 	testAcc();
 	
+	
+	//  ********************* ACCELEROMETER ***********************
+	
 	// WRITE DATA
 	i2cBuff[0] = 0x20 | 0x80;	// register 0. the |0x80 puts a '1' as the MSB and therefore enables multiple byte reading.
 	i2cBuff[1] = 0x47;	// data to put in the register
@@ -301,7 +341,38 @@ int main(void)
 	HAL_I2C_Master_Transmit(&hi2c1, 0x33, i2cBuff, 1, 10);
 	i2cBuff[1] = 0x00;	// empty the variable
 	HAL_I2C_Master_Receive(&hi2c1, 0x32,  &i2cRx[1], 1, 10);
+	
+	// *********************** MAGNETOMETER ************************
+	
+	i2cBuff[0] = 0;
+	i2cBuff[1] = 0x14;
+	HAL_I2C_Master_Transmit(&hi2c1, MAG_ADD_WRITE, i2cBuff, 2, 10);
+	HAL_Delay(50);
+	
+	i2cBuff[0] = 0x01;
+	i2cBuff[1] = 0x30;
+	HAL_I2C_Master_Transmit(&hi2c1, MAG_ADD_WRITE, i2cBuff, 2, 10);
+	HAL_Delay(50);
+	
+	i2cBuff[0] = 0x02;
+	i2cBuff[1] = 0x00;
+	HAL_I2C_Master_Transmit(&hi2c1, MAG_ADD_WRITE, i2cBuff, 2, 10);
+	HAL_Delay(50);
+	
+	i2cBuff[0] = 0x0A;
+	i2cRx[2] = 0;
+	HAL_I2C_Master_Transmit(&hi2c1, MAG_ADD_WRITE, i2cBuff, 2, 10);
+	HAL_Delay(20);
+	HAL_I2C_Master_Receive(&hi2c1, MAG_ADD_READ, &i2cRx[2], 3, 10);
+	
+	// *********************** ARDUINO *****************
+	
+	i2cBuff[0] = 0x0F;
+	i2cBuff[1] = 0x14;
+	HAL_I2C_Master_Transmit(&hi2c1, 0, i2cBuff, 1, 10);
+	HAL_Delay(50);
 
+	
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -310,6 +381,7 @@ int main(void)
   {
 	getGyro();
 	getAcc();
+  getMagnetometer();
   gyro_int_values();
 	acc2angle();
 	angles();
@@ -553,6 +625,7 @@ static void MX_GPIO_Init(void)
 
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOE_CLK_ENABLE();
+  __HAL_RCC_GPIOH_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOD_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
@@ -561,7 +634,8 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_SET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOD, DIR_2_Pin|DIR_Pin|GPIO_PIN_13, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOD, DIR_2_Pin|DIR_Pin|GPIO_PIN_13|GPIO_PIN_14 
+                          |GPIO_PIN_15, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : PE3 */
   GPIO_InitStruct.Pin = GPIO_PIN_3;
@@ -570,8 +644,10 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : DIR_2_Pin DIR_Pin PD13 */
-  GPIO_InitStruct.Pin = DIR_2_Pin|DIR_Pin|GPIO_PIN_13;
+  /*Configure GPIO pins : DIR_2_Pin DIR_Pin PD13 PD14 
+                           PD15 */
+  GPIO_InitStruct.Pin = DIR_2_Pin|DIR_Pin|GPIO_PIN_13|GPIO_PIN_14 
+                          |GPIO_PIN_15;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
