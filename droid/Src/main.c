@@ -61,6 +61,7 @@ uint8_t modeReg;
 uint8_t i2cRx[8], i2cBuff[7], i2cBuffm[7];
 int i = 0;
 float acc[3], mag[3], gyro[3], acc_deg[3] = {0,0,0}, gyro_deg[3] = {0,0,0}, deg[3] = {0,0,0};
+float offsetMag[3];
 float total_acc;
 float Ka, Kg;	// gains of the complementary filter
 
@@ -193,7 +194,7 @@ void getMagnetometer(){
 	HAL_I2C_Master_Transmit(&hi2c1, MAG_ADD_WRITE, i2cBuffm, 1, 10);
 	HAL_I2C_Master_Receive(&hi2c1, MAG_ADD_READ, &i2cBuffm[1], 6, 10);
 	
-	HAL_I2C_Master_Transmit(&hi2c1, 0x54, i2cBuffm, 6, 10);
+	HAL_I2C_Master_Transmit(&hi2c1, 0x54, i2cBuffm, 7, 10);
 
 	int16_t data[3];
 	data[0] = ( i2cBuffm[1] << 8 ) | i2cBuffm[2];
@@ -211,6 +212,14 @@ void getMagnetometer(){
 		mag[1] /= MAG_SENS_XY;
 		mag[2] /= MAG_SENS_Z;
 }
+
+
+void calib_magnetometer(){
+	for(int i = 0; i < 3; i++){
+		mag[i] = offsetMag[i];
+	}
+}
+
 
 void gyro_int_values(){
 	for( int i = 0; i < 3; i++){
@@ -261,6 +270,10 @@ int main(void)
 	
 	Kg = 0.95;
 	Ka = 1 - Kg;
+	
+	offsetMag[0] = -0.085;
+	offsetMag[1] = -0.065;
+	offsetMag[2] = -0.325;
 	
   /* USER CODE END 1 */
 
