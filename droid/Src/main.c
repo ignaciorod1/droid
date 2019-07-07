@@ -61,9 +61,9 @@ uint8_t modeReg;
 uint8_t i2cRx[8], i2cBuff[7], i2cBuffm[7];
 int i = 0;
 float acc[3], mag[3], gyro[3], acc_deg[3] = {0,0,0}, gyro_deg[3] = {0,0,0}, deg[3] = {0,0,0};
-float offsetMag[3], deltaMag[3], scale[3];
+float offsetMag[3], deltaMag[3], normMag, scale[3], initMag[3] = {0,0,0}, mag_deg[3];
 float total_acc, avg_delta;
-float Ka, Kg;	// gains of the complementary filter
+float Ka, Kg, Kg2, Km;	// gains of the complementary filter
 
 uint8_t mg[9];
 
@@ -217,12 +217,17 @@ void getMagnetometer(){
 void calib_magnetometer(){
 		
 	for(int i = 0; i < 3; i++){
-		mag[i] = offsetMag[i];
+		mag[i] -= offsetMag[i];
 		scale[i] = avg_delta / deltaMag[i];
 		mag[i] *= scale[i];
 	}
 	
+	normMag = sqrt(mag[0] * mag[0] + mag[1] * mag[1] + mag[2] * mag[2]);
 	
+	for( int i = 0; i < 3; i++){
+		mag[i] /= normMag;
+		mag[i] -= initMag[i];
+	}
 }
 
 
@@ -237,6 +242,13 @@ void acc2angle(){
 	acc_deg[0] = asin(acc[1] / total_acc) * 57.2958;		// ROLL
 	acc_deg[1] = asin(-acc[0] /total_acc) * 57.2958;		// PITCH
 }	
+
+void mag2angle(){
+
+
+}
+
+
 
 void angles(){
 	
@@ -275,6 +287,8 @@ int main(void)
 	
 	Kg = 0.95;
 	Ka = 1 - Kg;
+	Kg2 = 0.9;
+	Km =  1 - Kg2;
 	
 	offsetMag[0] = -0.085;
 	offsetMag[1] = -0.065;
@@ -396,7 +410,12 @@ int main(void)
 	HAL_I2C_Master_Transmit(&hi2c1, 0, i2cBuff, 1, 10);
 	HAL_Delay(50);
 
+	getMagnetometer();
+	calib_magnetometer();
 	
+	for(int i = 0; i < 3; i++){
+		initMag[i] = mag[i];
+	}
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -406,6 +425,7 @@ int main(void)
 	getGyro();
 	getAcc();
   getMagnetometer();
+	calib_magnetometer();
   gyro_int_values();
 	acc2angle();
 	angles();
