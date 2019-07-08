@@ -46,6 +46,14 @@
 /* USER CODE END Includes */
 
 /* Private variables ---------------------------------------------------------*/
+#define UMAX 100
+#define UMIN 0
+#define epsilon 0.01
+
+#define Ki	0
+#define Kp 0
+#define Kd 0
+
 I2C_HandleTypeDef hi2c1;
 
 SPI_HandleTypeDef hspi1;
@@ -64,6 +72,12 @@ float acc[3], mag[3], gyro[3], acc_deg[3] = {0,0,0}, gyro_deg[3] = {0,0,0}, deg[
 float offsetMag[3], deltaMag[3], normMag, scale[3], initMag[3] = {0,0,0}, mag_deg[3];
 float total_acc, avg_delta;
 float Ka, Kg, Kg2, Km;	// gains of the complementary filter
+float Ts = 0.00001;// sampling time
+float N;
+float a0, a1, a2;
+double e2, e1, e0, u2, u1, u0;                    // variables used in PID computation
+int vel;	// input for both motors
+
 
 uint8_t mg[9];
 
@@ -72,7 +86,7 @@ struct Stepper {
 	uint16_t dir_number;
 	GPIO_PinState dir;
 	uint32_t uStepping;	//this controls the pins of microstepping  for the A4988 resolution
-	uint32_t vel;		//velocity in steps	
+	int32_t vel;		//velocity in steps	
 	TIM_TypeDef *timer;	//the timer attached 
 }left, right;
 
@@ -94,21 +108,18 @@ void HAL_TIM_MspPostInit(TIM_HandleTypeDef *htim);
 /* USER CODE BEGIN PFP */
 /* Private function prototypes -----------------------------------------------*/
 
-void setVel(struct Stepper *stepper, uint32_t vel){
-		stepper->timer->ARR = vel;
-		stepper->timer->CCR1 = vel/2;
-}
+void updateSteppers(){
+	if(right.vel < 0) 	right.dir = !right.dir;
+	if(left.vel < 0)		left.dir = !left.dir;
 
-void setDir(struct Stepper *stepper, int dir){
+	HAL_GPIO_WritePin(right.dir_letter, right.dir_number, right.dir);
+	HAL_GPIO_WritePin(left.dir_letter, left.dir_number, left.dir);
 	
-	if(dir == 1)	{
-		stepper->dir = GPIO_PIN_SET;
-	}
-	else if (dir == 0){ 
-		stepper->dir = GPIO_PIN_RESET;
-	}
-
-	HAL_GPIO_WritePin(stepper->dir_letter, stepper->dir_number, stepper->dir);
+	right.timer->ARR = right.vel;
+	right.timer->CCR1 = right.vel/2;
+	
+	left.timer -> ARR = left.vel;
+	left.timer -> CCR1 = left.vel / 2;
 }
 
 void turnOnGyro(){
@@ -163,6 +174,23 @@ void testAcc(){
 
 }
 
+float PID(float control_pitch, float pitch_angle){
+	e0 = pitch_angle - control_pitch;
+
+	float derivative, integral;
+
+  if( sqrt(e0* e0) > epsilon )
+	integral =integral+ e0 * Ts;
+
+	derivative= (e0 - e1) / Ts;
+	u0 = Kp * e0+ Ki * integral + Kd * derivative;
+	e1 = e0;
+	
+	if ( u0 > UMAX )	u0= UMAX;
+	else if ( u0 < UMIN)	u0 = UMIN;
+	
+	return u0;
+}
 
 void getAcc(){
 	
@@ -243,13 +271,6 @@ void acc2angle(){
 	acc_deg[1] = asin(-acc[0] /total_acc) * 57.2958;		// PITCH
 }	
 
-void mag2angle(){
-
-
-}
-
-
-
 void angles(){
 	
 	for(int i = 0; i < 2; i++){
@@ -287,8 +308,6 @@ int main(void)
 	
 	Kg = 0.95;
 	Ka = 1 - Kg;
-	Kg2 = 0.9;
-	Km =  1 - Kg2;
 	
 	offsetMag[0] = -0.085;
 	offsetMag[1] = -0.065;
@@ -300,6 +319,8 @@ int main(void)
 	
 	avg_delta = deltaMag[0] + deltaMag[1] + deltaMag[2];
 	avg_delta /= 3;
+	
+
   /* USER CODE END 1 */
 
   /* MCU Configuration----------------------------------------------------------*/
@@ -329,11 +350,11 @@ int main(void)
 	HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_1);
 	HAL_Delay(1000);
 	
-	setVel(&left, 300 );
-	setDir(&left, 1);
+	left.vel = 300;
+	left.dir = true;
 	
-	setVel(&right, 500);
-  setDir(&right, 0);
+	right.vel = 500;
+  right.dir = false;
 	
 	spiTx[0] = 0x20;
 	spiTx[1] = 0x0F;		//  95 Hz of output data rate and 12.5 Hz cutoff low freq
@@ -429,6 +450,9 @@ int main(void)
   gyro_int_values();
 	acc2angle();
 	angles();
+		
+	vel = PID(0, deg[0]);
+	right.vel = left.vel = vel;
   /* USER CODE END WHILE */
 
   /* USER CODE BEGIN 3 */
